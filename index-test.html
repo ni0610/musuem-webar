@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Museum WebAR</title>
+
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v7.0.0/dist/aframe-extras.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+      font-family: Arial, sans-serif;
+    }
+
+    #startButton {
+      position: fixed;
+      z-index: 99999;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      padding: 14px 22px;
+      border: none;
+      border-radius: 12px;
+      font-size: 18px;
+      font-weight: bold;
+      background: white;
+      color: black;
+    }
+
+    #subtitle {
+      position: fixed;
+      z-index: 99999;
+      left: 50%;
+      bottom: 30px;
+      transform: translateX(-50%);
+      max-width: 90vw;
+      padding: 12px 18px;
+      border-radius: 12px;
+      background: rgba(0,0,0,0.75);
+      color: white;
+      font-size: 18px;
+      text-align: center;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+
+<body>
+  <button id="startButton">Start Intro</button>
+
+  <div id="subtitle">Tippe auf Start und richte die Kamera auf den QR-Code.</div>
+
+  <audio id="backgroundAudio" src="./background.mp3" preload="auto" loop></audio>
+  <audio id="voiceAudio" src="./voice.mp3" preload="auto"></audio>
+
+  <a-scene
+    mindar-image="imageTargetSrc: ./targets.mind; autoStart: true;"
+    color-space="sRGB"
+    renderer="colorManagement: true; antialias: true; alpha: true"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false">
+
+    <a-assets>
+      <a-asset-item id="robotModel" src="./robot.glb"></a-asset-item>
+    </a-assets>
+
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <a-entity id="target" mindar-image-target="targetIndex: 0">
+<a-light type="ambient" intensity="3"></a-light>
+<a-light type="directional" position="0 3 3" intensity="4"></a-light>
+<a-light type="point" position="0 1 1" intensity="2.5" distance="5"></a-light>
+      <!-- Tấm vàng debug, để opacity thấp. Khi robot chạy ổn có thể xoá -->
+      <a-plane
+        position="0 0 0"
+        rotation="0 0 0"
+        width="1"
+        height="1"
+        material="color: yellow; side: double; opacity: 0.15; transparent: true">
+      </a-plane>
+
+      <!-- Robot -->
+      <a-entity
+        id="robot"
+        gltf-model="#robotModel"
+        brighten-model
+        position="0 0.05 0.35"
+        rotation="0 0 0"
+        scale="0.22 0.22 0.22">
+      </a-entity>
+
+    </a-entity>
+  </a-scene>
+
+  <script>
+    AFRAME.registerComponent("brighten-model", {
+  init: function () {
+    this.el.addEventListener("model-loaded", () => {
+      const model = this.el.getObject3D("mesh");
+
+      model.traverse((node) => {
+        if (!node.isMesh) return;
+
+        const materials = Array.isArray(node.material)
+          ? node.material
+          : [node.material];
+
+        materials.forEach((mat) => {
+          if (!mat) return;
+
+          if (mat.color) {
+            mat.color.multiplyScalar(1.35);
+          }
+
+          if ("metalness" in mat) {
+            mat.metalness = Math.min(mat.metalness, 0.15);
+          }
+
+          if ("roughness" in mat) {
+            mat.roughness = 0.45;
+          }
+
+          mat.needsUpdate = true;
+        });
+      });
+    });
+  }
+});
+    const startButton = document.getElementById("startButton");
+    const subtitle = document.getElementById("subtitle");
+    const robot = document.getElementById("robot");
+    const target = document.getElementById("target");
+
+    const backgroundAudio = document.getElementById("backgroundAudio");
+    const voiceAudio = document.getElementById("voiceAudio");
+
+    backgroundAudio.volume = 0.25;
+    voiceAudio.volume = 1.0;
+
+    let userStarted = false;
+    let targetVisible = false;
+    let introPlayed = false;
+    let timers = [];
+
+    function clearTimers() {
+      timers.forEach(timer => clearTimeout(timer));
+      timers = [];
+    }
+
+    function setSubtitle(text, delay) {
+      const timer = setTimeout(() => {
+        subtitle.textContent = text;
+      }, delay);
+      timers.push(timer);
+    }
+
+    function playIntro() {
+      if (introPlayed) return;
+      if (!targetVisible) return;
+
+      introPlayed = true;
+      clearTimers();
+
+      robot.removeAttribute("animation-mixer");
+
+      setTimeout(() => {
+        robot.setAttribute(
+          "animation-mixer",
+          "clip: *; loop: once; repetitions: 1; clampWhenFinished: true"
+        );
+      }, 50);
+
+      backgroundAudio.currentTime = 0;
+      backgroundAudio.play().catch(() => {});
+
+      voiceAudio.currentTime = 0;
+      voiceAudio.play().catch(() => {});
+
+      setSubtitle("Hallo! Ich bin dein Museumsbegleiter.", 0);
+      setSubtitle("Ich zeige dir heute spannende Exponate im Museum.", 3000);
+      setSubtitle("Folge mir und entdecke die Geschichte hinter dem Objekt.", 6500);
+      setSubtitle("", 10000);
+    }
+
+    startButton.addEventListener("click", () => {
+      userStarted = true;
+      startButton.style.display = "none";
+
+      if (targetVisible) {
+        playIntro();
+      } else {
+        subtitle.textContent = "Richte die Kamera jetzt auf den QR-Code.";
+      }
+    });
+
+    target.addEventListener("targetFound", () => {
+      targetVisible = true;
+
+      if (userStarted) {
+        subtitle.textContent = "QR-Code erkannt.";
+        playIntro();
+      } else {
+        subtitle.textContent = "QR-Code erkannt. Tippe auf Start Intro.";
+      }
+    });
+
+    target.addEventListener("targetLost", () => {
+      targetVisible = false;
+      subtitle.textContent = "QR-Code verloren. Richte die Kamera wieder auf den QR-Code.";
+    });
+  </script>
+</body>
+</html>
